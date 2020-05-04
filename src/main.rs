@@ -61,17 +61,20 @@ struct App {
 }
 
 impl App {
-    fn new(min_width: i32, nl: i32, np: i32) -> App {
+    fn new(min_width: i32) -> App {
         let mut ccol: cpu::CpuPercentCollector = cpu::CpuPercentCollector::new().unwrap(); 
         let percpu_percents = ccol.cpu_percent_percpu().unwrap();
         let total_percent = ccol.cpu_percent().unwrap();
+
+        let logical_cpu_count = cpu::cpu_count() as i32;
+        let physical_cpu_count = cpu::cpu_count_physical() as i32;
 
         App {
             min_width,
             cpu_loads: percpu_percents,
             cpu_total: total_percent,
-            n_logical: nl,
-            n_physical: np,
+            n_logical: logical_cpu_count,
+            n_physical: physical_cpu_count,
             collector: ccol,
         }
     }
@@ -120,17 +123,28 @@ impl App {
         }
         return false;
     }
+
+    fn get_avg_total(&self) -> Percent {
+        return self.cpu_total;
+    }
+
+    fn logical_cpu_count(&self) -> i32 {
+        return self.n_logical;
+    }
+
+    fn physical_cpu_count(&self) -> i32 {
+        return self.n_physical;
+    }
+
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut collector: cpu::CpuPercentCollector = cpu::CpuPercentCollector::new().unwrap();
-
-    let logical_cpu_count = cpu::cpu_count() as i32;
-    let physical_cpu_count = cpu::cpu_count_physical() as i32;
+//    let logical_cpu_count = cpu::cpu_count() as i32;
+//    let physical_cpu_count = cpu::cpu_count_physical() as i32;
 
     let temperatures = sensors::temperatures();
 
-    let mut app = App::new(5, logical_cpu_count, physical_cpu_count); 
+    let mut app = App::new(5); 
     terminal_setup()?;
 
     let backend = TermionBackend::new(std::io::stdout());
@@ -141,7 +155,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let row_height_percent: u16 = 100 / app.get_row_count() as u16;
     
     loop {
-        let avg_total = collector.cpu_percent().unwrap();
+        let avg_total = app.get_avg_total();
         if poll(time::Duration::from_millis(1000))? {
             let event = read()?;
             if event == Event::Key(KeyCode::Char('q').into()) {
@@ -149,7 +163,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 terminal_cleanup()?;
                 
                 // Just for testing.. if we want to display the thermal reading at some point.
-                println!("Logical Units: {}; Physical Units: {}", logical_cpu_count, physical_cpu_count);
+                println!("Logical Units: {}; Physical Units: {}", app.logical_cpu_count(), app.physical_cpu_count());
                 for t in temperatures {
                     let t_unwrapped = t.unwrap();
                     println!("{:?}: {}", t_unwrapped.label(), t_unwrapped.current().celsius());
