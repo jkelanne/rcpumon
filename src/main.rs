@@ -18,7 +18,9 @@ use tui::{
     Terminal,
 };
 
-//use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
+// TODO:
+//  - There are a ton of different types which should be unified. 
+//
 
 fn get_gauge<'a>(title: &'a str, borders_style: Borders, ratio: f64) -> Gauge<'a> {
     Gauge::default()
@@ -80,30 +82,43 @@ impl App {
     }
 
     fn get_row_count(&self) -> i32 {
-        return ((self.n_logical % self.min_width) + 1)
+        return (self.n_logical % self.min_width) + 1
     }
 
+    /* Do we need this? */
     fn get_last_column_count(&self) -> i32 {
-       return (self.n_logical - (self.min_width * (self.n_logical % self.min_width)))
+       return self.n_logical - (self.min_width * (self.n_logical % self.min_width))
     }
 
-    fn get_min_width(&self) -> usize {
+    /* Returs the number of elements in a row */
+    fn get_width(&self) -> usize {
         return self.min_width as usize;
     }
 
     fn cpu_percent_as_ratio(&self, cpu_id: usize) -> f64 {
-        let tval = self.cpu_loads[cpu_id] as f64 / 100.0;
-        if tval < 0.0 {
-            return 0.0;
-        } else if tval > 1.0 {
-            return 1.0;
-        } 
-        return tval;
+        if cpu_id < self.cpu_loads.len() {
+            let tval = self.cpu_loads[cpu_id] as f64 / 100.0;
+            if tval < 0.0 {
+                return 0.0;
+            } else if tval > 1.0 {
+                return 1.0;
+            }
+
+            return tval;
+        }
+        return 0.0;
     }
 
     fn cpu_get_name(&self, cpu_id: usize) -> String {
         let s = format!("CPU{}", cpu_id);
         return s;
+    }
+
+    fn is_valid_cpu_index(&self, index: usize) -> bool {
+        if index < self.cpu_loads.len() {
+            return true;
+        }
+        return false;
     }
 }
 
@@ -122,10 +137,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let borders_style = Borders::ALL;
-    //let borders_style = Borders::BOTTOM | Borders::LEFT;
-    //
+    let cell_width_percent: u16 = 100 / app.get_width() as u16;
+    let row_height_percent: u16 = 100 / app.get_row_count() as u16;
+    
     loop {
-        let avg_percents = collector.cpu_percent_percpu().unwrap();
         let avg_total = collector.cpu_percent().unwrap();
         if poll(time::Duration::from_millis(1000))? {
             let event = read()?;
@@ -133,6 +148,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("Exiting!!");
                 terminal_cleanup()?;
                 
+                // Just for testing.. if we want to display the thermal reading at some point.
                 println!("Logical Units: {}; Physical Units: {}", logical_cpu_count, physical_cpu_count);
                 for t in temperatures {
                     let t_unwrapped = t.unwrap();
@@ -144,82 +160,31 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         app.update();
 
-        // TODO: MAKE IT DYNAMIC!
-        // - Percentage(20) should be calculated
-        // Loop through the rows etc..
 
         terminal.draw(|mut f| {
+            // Split the view in vertical chunks
             let chunks = Layout::default()
-                // This chunk contains the rows. so it should be based on app.get_row_count();
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints(vec![Constraint::Percentage(20); app.get_row_count() as usize].as_ref())
+                .constraints(vec![Constraint::Percentage(row_height_percent); app.get_row_count() as usize].as_ref())
                 .split(f.size());
-            // The full rows should be generated here
-            {
+            // Fill the vertical chunks with gauges
+            for r in 0..app.get_row_count() {
                 let chunks = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints(vec![Constraint::Percentage(20); app.get_min_width() as usize].as_ref())
-                    .split(chunks[0]);
-                f.render_widget(get_gauge(&app.cpu_get_name(0), borders_style, app.cpu_percent_as_ratio(0)), chunks[0]);
-                f.render_widget(get_gauge(&app.cpu_get_name(1), borders_style, app.cpu_percent_as_ratio(1)), chunks[1]);
-                f.render_widget(get_gauge(&app.cpu_get_name(2), borders_style, app.cpu_percent_as_ratio(2)), chunks[2]);
-                f.render_widget(get_gauge(&app.cpu_get_name(3), borders_style, app.cpu_percent_as_ratio(3)), chunks[3]);
-                f.render_widget(get_gauge(&app.cpu_get_name(4), borders_style, app.cpu_percent_as_ratio(4)), chunks[4]);
-
-            }
-            {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(vec![Constraint::Percentage(20); app.get_min_width() as usize].as_ref())
-                    .split(chunks[1]);
-                f.render_widget(get_gauge(&app.cpu_get_name(5), borders_style, app.cpu_percent_as_ratio(5)), chunks[0]);
-                f.render_widget(get_gauge(&app.cpu_get_name(6), borders_style, app.cpu_percent_as_ratio(6)), chunks[1]);
-                f.render_widget(get_gauge(&app.cpu_get_name(7), borders_style, app.cpu_percent_as_ratio(7)), chunks[2]);
-                f.render_widget(get_gauge(&app.cpu_get_name(8), borders_style, app.cpu_percent_as_ratio(8)), chunks[3]);
-                f.render_widget(get_gauge(&app.cpu_get_name(9), borders_style, app.cpu_percent_as_ratio(9)), chunks[4]);
-
-            }
-            {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(vec![Constraint::Percentage(20); app.get_min_width() as usize].as_ref())
-                    .split(chunks[2]);
-                f.render_widget(get_gauge(&app.cpu_get_name(10), borders_style, app.cpu_percent_as_ratio(10)), chunks[0]);
-                f.render_widget(get_gauge(&app.cpu_get_name(11), borders_style, app.cpu_percent_as_ratio(11)), chunks[1]);
-                f.render_widget(get_gauge(&app.cpu_get_name(12), borders_style, app.cpu_percent_as_ratio(12)), chunks[2]);
-                f.render_widget(get_gauge(&app.cpu_get_name(13), borders_style, app.cpu_percent_as_ratio(13)), chunks[3]);
-                f.render_widget(get_gauge(&app.cpu_get_name(14), borders_style, app.cpu_percent_as_ratio(14)), chunks[4]);
-
-            }
-            {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(vec![Constraint::Percentage(20); app.get_min_width() as usize].as_ref())
-                    .split(chunks[3]);
-                f.render_widget(get_gauge(&app.cpu_get_name(15), borders_style, app.cpu_percent_as_ratio(15)), chunks[0]);
-                f.render_widget(get_gauge(&app.cpu_get_name(16), borders_style, app.cpu_percent_as_ratio(16)), chunks[1]);
-                f.render_widget(get_gauge(&app.cpu_get_name(17), borders_style, app.cpu_percent_as_ratio(17)), chunks[2]);
-                f.render_widget(get_gauge(&app.cpu_get_name(18), borders_style, app.cpu_percent_as_ratio(18)), chunks[3]);
-                f.render_widget(get_gauge(&app.cpu_get_name(19), borders_style, app.cpu_percent_as_ratio(19)), chunks[4]);
-
-            }
-            // app.get_last_column_count()
-            {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(vec![Constraint::Percentage(20); app.get_min_width() as usize].as_ref())
-                    .split(chunks[4]);
-                f.render_widget(get_gauge(&app.cpu_get_name(20), borders_style, app.cpu_percent_as_ratio(20)), chunks[0]);
-                f.render_widget(get_gauge(&app.cpu_get_name(21), borders_style, app.cpu_percent_as_ratio(21)), chunks[1]);
-                f.render_widget(get_gauge(&app.cpu_get_name(22), borders_style, app.cpu_percent_as_ratio(22)), chunks[2]);
-                f.render_widget(get_gauge(&app.cpu_get_name(23), borders_style, app.cpu_percent_as_ratio(23)), chunks[3]);
-                f.render_widget(get_gauge("AVG", borders_style,  (avg_total / 100.0) as f64), chunks[4]);
-
+                    .constraints(vec![Constraint::Percentage(cell_width_percent); app.get_width() as usize].as_ref())
+                    .split(chunks[r as usize]);
+                for n in 0..=4 {
+                    // TODO: This is ugly, FIX IT!
+                    let i: usize = (r as usize * 5) + n as usize;
+                    if app.is_valid_cpu_index(i) {
+                        f.render_widget(get_gauge(&app.cpu_get_name(i), borders_style, app.cpu_percent_as_ratio(i)), chunks[n]);
+                    } else {
+                        f.render_widget(get_gauge("AVG", borders_style,  (avg_total / 100.0) as f64), chunks[4]);
+                    }
+                }
             }
         })?;
-        
-        //thread::sleep(time::Duration::from_secs(1));
     }
     Ok(())
 }
