@@ -18,9 +18,14 @@ use tui::{
     Terminal,
 };
 
-// TODO:
-//  - There are a ton of different types which should be unified. 
-//
+/***
+ * TODO:
+ *  - Add functionality for testing different sizes of grids (for different number of CPUs)
+ *  - Add *themes* or something
+ *  - Add Colors for low, med and high loads
+ *  - Add option for displaying current CPU freqs
+ *  - Add option for displaying CPU thermal level
+ */
 
 fn get_gauge<'a>(title: &'a str, borders_style: Borders, ratio: f64) -> Gauge<'a> {
     Gauge::default()
@@ -139,9 +144,6 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-//    let logical_cpu_count = cpu::cpu_count() as i32;
-//    let physical_cpu_count = cpu::cpu_count_physical() as i32;
-
     let temperatures = sensors::temperatures();
 
     let mut app = App::new(5); 
@@ -189,7 +191,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .constraints(vec![Constraint::Percentage(cell_width_percent); app.get_width() as usize].as_ref())
                     .split(chunks[r]);
                 for n in 0..=(app.get_width() - 1) {
-                    // TODO: This is ugly, FIX IT!
                     let i = (r * 5) + n;
                     if app.is_valid_cpu_index(i) {
                         f.render_widget(get_gauge(&app.cpu_get_name(i), borders_style, app.cpu_percent_as_ratio(i)), chunks[n]);
