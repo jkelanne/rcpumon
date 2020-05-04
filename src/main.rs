@@ -34,7 +34,7 @@ fn terminal_setup() -> std::result::Result<(), ErrorKind> {
     execute!(stdout, terminal::EnterAlternateScreen)?;
     execute!(stdout, cursor::Hide)?;
     execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
-    terminal::enable_raw_mode().unwrap();
+    terminal::enable_raw_mode()?;
 
     Ok(())
 }
@@ -44,8 +44,8 @@ fn terminal_cleanup() -> std::result::Result<(), ErrorKind> {
     execute!(tmp_stdout, cursor::MoveTo(0,0))?;
     execute!(tmp_stdout, terminal::Clear(terminal::ClearType::All))?;
     execute!(tmp_stdout, terminal::LeaveAlternateScreen)?;
-    execute!(tmp_stdout, cursor::Show).unwrap();
-    terminal::disable_raw_mode().unwrap();
+    execute!(tmp_stdout, cursor::Show)?;
+    terminal::disable_raw_mode()?;
 
     Ok(())
 }
