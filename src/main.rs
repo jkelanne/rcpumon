@@ -81,8 +81,8 @@ impl App {
         self.cpu_total = self.collector.cpu_percent().unwrap();
     }
 
-    fn get_row_count(&self) -> i32 {
-        return (self.n_logical % self.min_width) + 1
+    fn get_row_count(&self) -> usize {
+        return (self.n_logical % self.min_width) as usize + 1
     }
 
     /* Do we need this? */
@@ -173,14 +173,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let chunks = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints(vec![Constraint::Percentage(cell_width_percent); app.get_width() as usize].as_ref())
-                    .split(chunks[r as usize]);
-                for n in 0..=4 {
+                    .split(chunks[r]);
+                for n in 0..=(app.get_width() - 1) {
                     // TODO: This is ugly, FIX IT!
-                    let i: usize = (r as usize * 5) + n as usize;
+                    let i = (r * 5) + n;
                     if app.is_valid_cpu_index(i) {
                         f.render_widget(get_gauge(&app.cpu_get_name(i), borders_style, app.cpu_percent_as_ratio(i)), chunks[n]);
                     } else {
-                        f.render_widget(get_gauge("AVG", borders_style,  (avg_total / 100.0) as f64), chunks[4]);
+                        f.render_widget(get_gauge("AVG", borders_style,  (avg_total / 100.0) as f64), chunks[n]);
                     }
                 }
             }
