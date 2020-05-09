@@ -18,6 +18,27 @@ use tui::{
     Terminal,
 };
 
+use structopt::StructOpt;
+
+#[derive(StructOpt, Debug)]
+#[structopt(name = "basic")]
+struct Opt {
+    #[structopt(short, long)]
+    debug: bool,
+
+    #[structopt(short = "w", long, default_value = "5")]
+    width: usize,
+
+    #[structopt(short = "c", long, default_value = "0")]
+    sim_core_count: usize,
+
+    #[structopt(short = "C", long, default_value = "CPUTIN")]
+    cputin: String,
+
+    #[structopt(short = "S", long, default_value = "SYSTIN")]
+    systin: String,
+}
+
 /***
  * TODO:
  *  - Add functionality for testing different sizes of grids (for different number of CPUs)
@@ -57,23 +78,28 @@ fn terminal_cleanup() -> std::result::Result<(), ErrorKind> {
 
 // In search for a better name
 struct App {
-    min_width: i32,
+    min_width: usize,
     cpu_loads: Vec<Percent>,
     cpu_total: Percent,
-    n_logical: i32,
-    n_physical: i32,
+    n_logical: usize,
+    n_physical: usize,
     collector: cpu::CpuPercentCollector,
 }
 
 impl App {
-    fn new(min_width: i32) -> App {
+    fn new(min_width: usize, l_core_count: usize) -> App {
         let mut ccol: cpu::CpuPercentCollector = cpu::CpuPercentCollector::new().unwrap(); 
         let percpu_percents = ccol.cpu_percent_percpu().unwrap();
         let total_percent = ccol.cpu_percent().unwrap();
 
-        let logical_cpu_count = cpu::cpu_count() as i32;
-        let physical_cpu_count = cpu::cpu_count_physical() as i32;
+        let mut logical_cpu_count = cpu::cpu_count() as usize;
+        let physical_cpu_count = cpu::cpu_count_physical() as usize;
 
+        if l_core_count > 0 {
+            // Limit the number of cores displayer. Mainly used for testing..
+            logical_cpu_count = l_core_count;
+        }            
+        
         App {
             min_width,
             cpu_loads: percpu_percents,
@@ -90,17 +116,16 @@ impl App {
     }
 
     fn get_row_count(&self) -> usize {
-        return (self.n_logical % self.min_width) as usize + 1
-    }
+        if self.n_logical < self.min_width {
+            return 1;
+        }
 
-    /* Do we need this? */
-    fn get_last_column_count(&self) -> i32 {
-       return self.n_logical - (self.min_width * (self.n_logical % self.min_width))
+        return (self.n_logical / self.min_width) as usize + 1
     }
 
     /* Returs the number of elements in a row */
     fn get_width(&self) -> usize {
-        return self.min_width as usize;
+        return self.min_width;
     }
 
     fn cpu_percent_as_ratio(&self, cpu_id: usize) -> f64 {
@@ -123,7 +148,7 @@ impl App {
     }
 
     fn is_valid_cpu_index(&self, index: usize) -> bool {
-        if index < self.cpu_loads.len() {
+        if index < self.cpu_loads.len() && index < self.n_logical {
             return true;
         }
         return false;
@@ -133,20 +158,26 @@ impl App {
         return self.cpu_total;
     }
 
-    fn logical_cpu_count(&self) -> i32 {
+    fn logical_cpu_count(&self) -> usize {
         return self.n_logical;
     }
 
-    fn physical_cpu_count(&self) -> i32 {
+    fn physical_cpu_count(&self) -> usize {
         return self.n_physical;
     }
 
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // When passing arguments via cargo, use --
+    //      `cargo run -- --help`
+    //let args: Vec<String> = env::args().collect();
+    let opts = Opt::from_args();
+
+
     let temperatures = sensors::temperatures();
 
-    let mut app = App::new(5); 
+    let mut app = App::new(opts.width, opts.sim_core_count); 
     terminal_setup()?;
 
     let backend = TermionBackend::new(std::io::stdout());
@@ -163,12 +194,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             if event == Event::Key(KeyCode::Char('q').into()) {
                 println!("Exiting!!");
                 terminal_cleanup()?;
-                
-                // Just for testing.. if we want to display the thermal reading at some point.
-                println!("Logical Units: {}; Physical Units: {}", app.logical_cpu_count(), app.physical_cpu_count());
-                for t in temperatures {
-                    let t_unwrapped = t.unwrap();
-                    println!("{:?}: {}", t_unwrapped.label(), t_unwrapped.current().celsius());
+               
+                if opts.debug == true {
+                    // Just for testing.. if we want to display the thermal reading at some point.
+                    println!("Logical Units: {}; Physical Units: {}", app.logical_cpu_count(), app.physical_cpu_count());
+                    for t in temperatures {
+                        let t_unwrapped = t.unwrap();
+                        println!("{:?}: {}", t_unwrapped.label(), t_unwrapped.current().celsius());
+                    }
+    
+                    println!("{:#?}", opts);
+    
+                    println!("Cell width percentage: {} ({}); Row height percentage: {} ({})", cell_width_percent, 
+                        app.get_width(),
+                        row_height_percent,
+                        app.get_row_count());
+                    println!("app.logical_cpu_count(): {}", app.logical_cpu_count());
+                    println!("app.get_width(): {}", app.get_width());
                 }
                 break;
             }
@@ -191,11 +233,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .constraints(vec![Constraint::Percentage(cell_width_percent); app.get_width() as usize].as_ref())
                     .split(chunks[r]);
                 for n in 0..=(app.get_width() - 1) {
-                    let i = (r * 5) + n;
+                    let i = (r * opts.width) + n;
                     if app.is_valid_cpu_index(i) {
                         f.render_widget(get_gauge(&app.cpu_get_name(i), borders_style, app.cpu_percent_as_ratio(i)), chunks[n]);
                     } else {
                         f.render_widget(get_gauge("AVG", borders_style,  (avg_total / 100.0) as f64), chunks[n]);
+                        break;
                     }
                 }
             }
