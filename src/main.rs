@@ -37,6 +37,9 @@ struct Opt {
 
     #[structopt(short = "S", long, default_value = "SYSTIN")]
     systin: String,
+
+    #[structopt(short = "T", long)]
+    display_temperature: bool,
 }
 
 /***
@@ -83,6 +86,9 @@ struct App {
     cpu_total: Percent,
     n_logical: usize,
     n_physical: usize,
+    display_temperature: bool,
+    cpu_temp: f64,
+    cpu_max_temp: f64,
     collector: cpu::CpuPercentCollector,
 }
 
@@ -106,6 +112,9 @@ impl App {
             cpu_total: total_percent,
             n_logical: logical_cpu_count,
             n_physical: physical_cpu_count,
+            display_temperature: false,
+            cpu_temp: 0.0,
+            cpu_max_temp: 100.0,    
             collector: ccol,
         }
     }
@@ -120,7 +129,8 @@ impl App {
             return 1;
         }
 
-        return (self.n_logical / self.min_width) as usize + 1
+        let rval = (self.n_logical / self.min_width) as usize + 1;
+        return rval;
     }
 
     /* Returs the number of elements in a row */
@@ -166,6 +176,10 @@ impl App {
         return self.n_physical;
     }
 
+    fn get_cpu_temp(&self) -> f64 {
+        return 0.5;
+    }
+
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -184,9 +198,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let borders_style = Borders::ALL;
+
+    // Can't we do this so that row_count isn't mutable? it doesn't have to change after this
+    // ever..
+    let mut row_count = app.get_row_count();
+    if opts.display_temperature == true {
+        row_count = row_count + 1;
+    }
+
     let cell_width_percent: u16 = 100 / app.get_width() as u16;
-    let row_height_percent: u16 = 100 / app.get_row_count() as u16;
-    
+    let row_height_percent: u16 = 100 / row_count as u16;
+
     loop {
         let avg_total = app.get_avg_total();
         if poll(time::Duration::from_millis(1000))? {
@@ -218,13 +240,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         app.update();
 
-
         terminal.draw(|mut f| {
             // Split the view in vertical chunks
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints(vec![Constraint::Percentage(row_height_percent); app.get_row_count() as usize].as_ref())
+                .constraints(vec![Constraint::Percentage(row_height_percent); row_count as usize].as_ref())
                 .split(f.size());
             // Fill the vertical chunks with gauges
             for r in 0..app.get_row_count() {
@@ -242,6 +263,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+
+            if opts.display_temperature == true {
+                // There should be a neater way to handle this..
+                // Also, it would be nice if we could set like normal, high and critical areas to
+                // the gauge.. or something..
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints(vec![Constraint::Percentage(100); 1].as_ref())
+                    .split(chunks[row_count - 1]);
+
+                app.get_cpu_temp(); 
+
+                f.render_widget(get_gauge("TEMP", borders_style, 0.5), chunks[0]);
+            }
+
         })?;
     }
     Ok(())
